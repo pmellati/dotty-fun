@@ -1,19 +1,30 @@
 package dottyfun
 
+import scala.reflect._
 import BetterFailables._
 
 object Main {
   def main(args: Array[String]): Unit = {
-    println{
-      recover[Handle = E1](
-        op1.flatMap(op2),
-        {(e: E1) => "Error1 Averted!"}
-      )
+    case class E1()
+    case class E2()
 
-      // op1.flatMap(op2).rec {e: E1 =>
-      //   "Error1 Averted"
-      // }
-    }
+    def op1: Failable[E1, String] = Success("op1")
+    // def op1: Failable[E1, String] = Failure(E1())
+
+    // def op2(param: String): Failable[E2, String] = Success("op2")
+    def op2(param: String): Failable[E2, String] = Failure(E2())
+
+    def combinedOps = op1 flatMap op2
+
+    // combinedOps.value // won't compile
+
+    val stillFailable = recover[Handle = E1](combinedOps) {e: E1 => "E1 recovered!"}
+
+    // stillFailable.value  // won't compile
+
+    val unfailable = recover[Handle = E2](stillFailable) {e: E2 => "E2 recovered!"}
+
+    println(unfailable.value)
   }
 }
 
@@ -35,16 +46,20 @@ object BetterFailables {
       f(a)
   }
 
-  // implicit class FailableHandle[Handle, Rest, A](failable: Failable[Handle | Rest, A]) {
-  //   def rec(f: Handle => A): Failable[Rest, A] = null
-  // }
+  def recover[Handle : ClassTag, E2, A](failable: Failable[Handle | E2, A])(rec: Handle => A): Failable[E2, A] =
+    if (failable.isInstanceOf[Success[_, _]])
+      failable.asInstanceOf[Failable[E2, A]]
+    else {
+      val failure = failable.asInstanceOf[Failure[_, _]]
+      val errorTag = ClassTag(failure.e.getClass)
 
-  def recover[Handle, E2, A](failable: Failable[Handle | E2, A], rec: Handle => A): Failable[E2, A] = null
+      if (errorTag == implicitly[ClassTag[Handle]])
+        Success[E2, A](rec(failure.e.asInstanceOf[Handle]))
+      else
+        failable.asInstanceOf[Failable[E2, A]]
+    }
 
-  trait E1
-  trait E2
-
-  def op1: Failable[E1, String] = Success("op1")
-
-  def op2(param: String): Failable[E2, String] = Success("op2")
+  implicit class UnfailableValue[A](unfailable: Failable[Nothing, A]) {
+    def value: A = unfailable.asInstanceOf[Success[Nothing, A]].a
+  }
 }
