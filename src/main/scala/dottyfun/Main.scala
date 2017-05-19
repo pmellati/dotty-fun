@@ -46,18 +46,15 @@ object BetterFailables {
       f(a)
   }
 
-  def recover[Handle : ClassTag, E2, A](failable: Failable[Handle | E2, A])(rec: Handle => A): Failable[E2, A] =
-    if (failable.isInstanceOf[Success[_, _]])
-      failable.asInstanceOf[Failable[E2, A]]
-    else {
-      val failure = failable.asInstanceOf[Failure[_, _]]
-      val errorTag = ClassTag(failure.e.getClass)
-
-      if (errorTag == implicitly[ClassTag[Handle]])
-        Success[E2, A](rec(failure.e.asInstanceOf[Handle]))
+  def recover[Handle : ClassTag, E2, A](failable: Failable[Handle | E2, A])(rec: Handle => A): Failable[E2, A] = failable match {
+    case s: Success[_, _] =>
+      s.asInstanceOf[Failable[E2, A]]
+    case f: Failure[_, _] =>
+      if (ClassTag(f.e.getClass) == implicitly[ClassTag[Handle]])
+        Success[E2, A](rec(f.e.asInstanceOf[Handle]))
       else
         failable.asInstanceOf[Failable[E2, A]]
-    }
+  }
 
   implicit class UnfailableValue[A](unfailable: Failable[Nothing, A]) {
     def value: A = unfailable.asInstanceOf[Success[Nothing, A]].a
